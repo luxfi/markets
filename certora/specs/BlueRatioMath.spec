@@ -1,7 +1,11 @@
 methods {
+    function getMarketId(MorphoHarness.Market) external returns MorphoHarness.Id envfree;
     function totalSupply(MorphoHarness.Id) external returns uint256 envfree;
     function totalSupplyShares(MorphoHarness.Id) external returns uint256 envfree;
     function totalBorrow(MorphoHarness.Id) external returns uint256 envfree;
+    function setTotalSupply(MorphoHarness.Id, uint256) external envfree;
+    function setTotalSupplyShares(MorphoHarness.Id, uint256) external envfree;
+    function setTotalBorrow(MorphoHarness.Id, uint256) external envfree;
     function totalBorrowShares(MorphoHarness.Id) external returns uint256 envfree;
     function fee(MorphoHarness.Id) external returns uint256 envfree;
     function lastUpdate(MorphoHarness.Id) external returns uint256 envfree;
@@ -11,6 +15,7 @@ methods {
     function MathLib.wTaylorCompounded(uint256, uint256) internal returns uint256 => NONDET;
 
     function _.borrowRate(MorphoHarness.Market) external => HAVOC_ECF;
+    function Morpho._accrueInterests(MorphoHarness.Market memory market, MorphoHarness.Id id) internal with (env e) => summaryAccrueInterests(id, e.block.timestamp);
 }
 
 definition VIRTUAL_ASSETS() returns mathint = 1;
@@ -19,6 +24,28 @@ definition MAX_FEE() returns mathint = 10^18 * 25/100;
 
 invariant feeInRange(MorphoHarness.Id id)
     to_mathint(fee(id)) <= MAX_FEE();
+
+function summaryAccrueInterests(/*MorphoHarness.Market market, */MorphoHarness.Id id, uint256 timestamp) {
+    //assert id == getMarketId(market);
+    if (lastUpdate(id) < timestamp) {
+        uint256 interests;
+
+        require interests >= 0;
+        uint256 oldSupply = totalSupply(id);
+        uint256 oldSupplyShares = totalSupplyShares(id);
+        uint256 newBorrow = require_uint256(totalBorrow(id) + interests);
+        uint256 newSupply = require_uint256(totalSupply(id) + interests);
+        uint256 newSupplyShares;
+        require newSupplyShares >= totalSupplyShares(id);
+
+        require (VIRTUAL_ASSETS() + oldSupply) * (VIRTUAL_SHARES() + newSupplyShares) <=
+                (VIRTUAL_ASSETS() + newSupply) * (VIRTUAL_SHARES() + oldSupplyShares);
+
+        setTotalSupplyShares(id, newSupplyShares);
+        setTotalSupply(id, newSupply);
+        setTotalBorrow(id, newBorrow);
+    }
+}
 
 /* This is a simple overapproximative summary, stating that it rounds in the right direction.
  * The summary is checked by the specification in BlueRatioMathSummary.spec.
