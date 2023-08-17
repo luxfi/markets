@@ -23,30 +23,33 @@ contract ERC20USDT {
         _;
     }
 
-    function transfer(address _to, uint256 _value) public {
-        balanceOf[msg.sender] -= _value;
-        balanceOf[_to] += _value;
+    function _transfer(address _from, address _to, uint256 _amount) public {
+        balanceOf[_from] -= _amount;
+        balanceOf[_to] += _amount;
     }
 
-    function transferFrom(address _from, address _to, uint256 _value) public {
+    function transfer(address _to, uint256 _amount) public {
+        _transfer(msg.sender, _to, _amount);
+    }
+
+    function transferFrom(address _from, address _to, uint256 _amount) public {
         if (allowed[_from][msg.sender] < MAX_UINT) {
-            allowed[_from][msg.sender] -= _value;
+            allowed[_from][msg.sender] -= _amount;
         }
-        balanceOf[_from] -= _value;
-        balanceOf[_to] += _value;
+        _transfer(_from, _to, _amount);
     }
 
-    function approve(address _spender, uint256 _value) public {
-        require(!((_value != 0) && (allowed[msg.sender][_spender] != 0)));
+    function approve(address _spender, uint256 _amount) public {
+        require(!((_amount != 0) && (allowed[msg.sender][_spender] != 0)));
 
-        allowed[msg.sender][_spender] = _value;
+        allowed[msg.sender][_spender] = _amount;
     }
 
     function allowance(address _owner, address _spender) public view returns (uint256 remaining) {
         return allowed[_owner][_spender];
     }
 
-    function mint(address _receiver, uint256 amount) public onlyOwner {
-        balanceOf[owner] += amount;
+    function mint(address _receiver, uint256 _amount) public onlyOwner {
+        balanceOf[_receiver] += _amount;
     }
 }
