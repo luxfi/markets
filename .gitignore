@@ -7,3 +7,7 @@ docs/
 
 # Certora
 .certora_internal/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+QWEN.md
