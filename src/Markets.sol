@@ -1,23 +1,23 @@
-// SPDX-License-Identifier: BUSL-1.1
+// SPDX-License-Identifier: GPL-2.0
 pragma solidity 0.8.19;
 
 import {
     Id,
-    IMorphoStaticTyping,
-    IMorphoBase,
+    IMarketsStaticTyping,
+    IMarketsBase,
     MarketParams,
     Position,
     Market,
     Authorization,
     Signature
-} from "./interfaces/IMorpho.sol";
+} from "./interfaces/IMarkets.sol";
 import {
-    IMorphoLiquidateCallback,
-    IMorphoRepayCallback,
-    IMorphoSupplyCallback,
-    IMorphoSupplyCollateralCallback,
-    IMorphoFlashLoanCallback
-} from "./interfaces/IMorphoCallbacks.sol";
+    IMarketsLiquidateCallback,
+    IMarketsRepayCallback,
+    IMarketsSupplyCallback,
+    IMarketsSupplyCollateralCallback,
+    IMarketsFlashLoanCallback
+} from "./interfaces/IMarketsCallbacks.sol";
 import {IIrm} from "./interfaces/IIrm.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 import {IOracle} from "./interfaces/IOracle.sol";
