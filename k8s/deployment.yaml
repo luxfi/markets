@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: markets
+  namespace: lux
+  labels:
+    app: markets
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: markets
+  template:
+    metadata:
+      labels:
+        app: markets
+    spec:
+      containers:
+        - name: markets
+          image: ghcr.io/luxfi/markets:latest
+          ports:
+            - containerPort: 3000
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: markets
+  namespace: lux
+spec:
+  selector:
+    app: markets
+  ports:
+    - port: 80
+      targetPort: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: markets
+  namespace: lux
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - markets.lux.network
+      secretName: markets-tls
+  rules:
+    - host: markets.lux.network
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: markets
+                port:
+                  number: 80
