@@ -1,13 +1,6 @@
-# Compiler files
-cache/
+node_modules/
+.next/
 out/
-
-# Docs
-docs/
-
-# Certora
-.certora_internal/
-AGENTS.md
+.env*.local
+*.tsbuildinfo
 CLAUDE.md
-GEMINI.md
-QWEN.md
