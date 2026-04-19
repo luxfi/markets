@@ -1,0 +1,20 @@
+node_modules
+**/node_modules
+dist
+**/dist
+.git
+.env*
+.vscode/
+.idea/
+coverage/
+*.test.ts
+*.spec.ts
+.DS_Store
+# Solidity/Foundry artifacts shouldn't land in the web image
+out/
+cache/
+broadcast/
+audits/
+certora/
+test/
+morpho-blue-whitepaper.pdf
