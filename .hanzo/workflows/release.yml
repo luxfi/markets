@@ -160,12 +160,19 @@ jobs:
           echo "index.html: $(wc -c < "$idx") bytes; js chunks: ${js}"
           [ "$js" -ge 1 ] || { echo "::error::no JS emitted — the build produced no chunks"; exit 1; }
 
+          # Only references that name a FILE. A bare `href="/help"` is navigation,
+          # not an asset, and asserting it exists on disk is a category error.
           missing=0
-          for ref in $(grep -oE '(src|href)="/[^"]+"' "$idx" | cut -d'"' -f2 | sort -u); do
-            if [ ! -e "smoke/public${ref}" ]; then
-              echo "::error::index.html references ${ref}, which is not in the image"
-              missing=1
-            fi
+          for ref in $(grep -oE '(src|href)="/[^"]+\.[a-zA-Z0-9]+"' "$idx" | cut -d'"' -f2 | sort -u); do
+            [ -e "smoke/public${ref}" ] && continue
+            # Next.js basePath: an app served at /help emits /help/_next/... into
+            # index.html while the image holds /_next/... — the prefix is added by
+            # the router, not the layer. Resolving only the literal path failed
+            # every basePath app while the asset was present all along.
+            stripped="/${ref#/*/}"
+            [ "$stripped" != "$ref" ] && [ -e "smoke/public${stripped}" ] && continue
+            echo "::error::index.html references ${ref}, which is not in the image"
+            missing=1
           done
           [ "$missing" -eq 0 ] || exit 1
           echo "bundle is complete"
