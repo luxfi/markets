@@ -1,0 +1,215 @@
+name: Release
+
+# Builds ghcr.io/luxfi/<repo> on the native runners (git.hanzo.ai → git-runner).
+#
+# This replaces .github/workflows/publish.yml, which could not run anywhere. It
+# asked for `runs-on: ubuntu-latest`; the git-runner advertises ~28 labels and
+# that is not one of them, so on this forge the job was never picked up (it is
+# one of 44 jobs sitting in `waiting` for exactly that label). On GitHub it was
+# equally stuck, because the luxfi org has zero registered runners. A workflow
+# addressed to a runner that does not exist is not a build, it is a queue entry.
+#
+# Two further GitHub-only assumptions are gone with it:
+#   - ghcr login used github.actor + secrets.GITHUB_TOKEN. On this forge
+#     GITHUB_TOKEN is minted by git.hanzo.ai; ghcr.io answers `denied: denied`.
+#     GHCR_USER / GHCR_TOKEN are luxfi org-level secrets here and carry
+#     write:packages.
+#   - cache-from/to: type=gha addressed the GitHub Actions cache service, which
+#     is not what backs this forge.
+#
+# The v1.x.x version discipline is unchanged: feat/BREAKING/`type!` → minor,
+# anything else → patch, and never a major bump.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    # A release is a change to the artifact, not to the manifest that points at
+    # it or the prose that describes it. Without this, a "pin the image" commit
+    # is itself a main push and cuts the next version, so the pin is stale the
+    # instant it lands.
+    paths-ignore:
+      - 'k8s/**'
+      - '**/*.md'
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: [lux-build-linux-amd64]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history + tags: the bump reads the highest existing v1.* tag,
+          # and a shallow clone would silently restart the series at 1.0.0.
+          fetch-depth: 0
+
+      - name: Compute version and tags
+        id: meta
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            NEW_TAG=false
+          else
+            LAST=$(git tag -l 'v1.*' --sort=-v:refname | head -1)
+            if [ -z "$LAST" ]; then
+              VERSION="1.0.0"
+            else
+              MINOR=$(echo "${LAST#v1.}" | cut -d. -f1)
+              PATCH=$(echo "${LAST#v1.}" | cut -d. -f2)
+              MSG=$(git log -1 --pretty=%s)
+              # feat: / BREAKING / `type!:` → minor, else patch. NO MAJOR BUMPS.
+              if [[ "$MSG" =~ ^(feat|BREAKING|[a-z]+!) ]]; then
+                VERSION="1.$((MINOR+1)).0"
+              else
+                VERSION="1.$MINOR.$((PATCH+1))"
+              fi
+            fi
+            NEW_TAG=true
+          fi
+          {
+            echo "tags<<EOF"
+            echo "${IMAGE}:v${VERSION}"
+            echo "${IMAGE}:${VERSION}"
+            echo "${IMAGE}:sha-${GITHUB_SHA:0:7}"
+            if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+              echo "${IMAGE}:latest"
+              echo "${IMAGE}:main"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "probe=${IMAGE}:v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+          echo "building ${IMAGE}:v${VERSION}"
+
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+          driver-opts: network=host
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USER }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Skip if this version is already published
+        id: guard
+        # A main push computes a NEW version, tags it, and that tag mirrors back
+        # here as a second push event. Without this the same bytes would be built
+        # and pushed twice for every release. The tag run is the duplicate, so it
+        # is the one that stands down — and only when the artifact provably exists.
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/v* ]] && \
+             docker manifest inspect '${{ steps.meta.outputs.probe }}' >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "${{ steps.meta.outputs.probe }} already published by the main run — nothing to do"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build (load for smoke, not yet pushed)
+        if: steps.guard.outputs.skip == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          # So "which tag is it" and "which commit is in it" are both answerable
+          # from the registry alone, without pulling the image.
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.ref.name=${{ github.ref_name }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=v${{ steps.meta.outputs.version }}
+
+      - name: Smoke — the bundle exists and every asset it references is present
+        if: steps.guard.outputs.skip == 'false'
+        # `pnpm build` can exit 0 having produced an output dir that is empty or
+        # missing chunks, and the runtime stage is a bare static server, so a
+        # hollow image starts happily and serves a white page with a 200. That is
+        # invisible to both `docker build` and an HTTP health check.
+        #
+        # The runtime image has no shell, so this copies /public out rather than
+        # exec'ing inside it, then checks the one invariant that matters:
+        # index.html exists, and every local asset it references resolves on disk.
+        run: |
+          set -euo pipefail
+          img='${{ steps.meta.outputs.probe }}'
+          cid=$(docker create "$img")
+          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+          rm -rf smoke && mkdir -p smoke
+          docker cp "$cid:/public" smoke/public
+
+          idx=smoke/public/index.html
+          [ -s "$idx" ] || { echo "::error::/public/index.html is missing or empty"; exit 1; }
+
+          js=$(find smoke/public -name '*.js' | wc -l)
+          echo "index.html: $(wc -c < "$idx") bytes; js chunks: ${js}"
+          [ "$js" -ge 1 ] || { echo "::error::no JS emitted — the build produced no chunks"; exit 1; }
+
+          missing=0
+          for ref in $(grep -oE '(src|href)="/[^"]+"' "$idx" | cut -d'"' -f2 | sort -u); do
+            if [ ! -e "smoke/public${ref}" ]; then
+              echo "::error::index.html references ${ref}, which is not in the image"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "bundle is complete"
+
+      - name: Push
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          while IFS= read -r t; do
+            [ -n "$t" ] && docker push "$t"
+          done <<< "${{ steps.meta.outputs.tags }}"
+
+      - name: Verify the pushed manifest resolves
+        if: steps.guard.outputs.skip == 'false'
+        # A tag naming nothing pullable is how a Deployment ends up pinned to a
+        # phantom: the pin applies, the pod never starts, and the tag still looks
+        # like a release. Prove it before the job goes green.
+        run: |
+          set -euo pipefail
+          img='${{ steps.meta.outputs.probe }}'
+          for i in 1 2 3 4 5 6; do
+            if docker manifest inspect "$img" >/dev/null 2>&1; then
+              echo "$img is resolvable"; exit 0
+            fi
+            echo "manifest not visible yet (attempt ${i}/6) — retrying"; sleep 5
+          done
+          echo "::error::$img not pullable after push"; exit 1
+
+      - name: Tag the release
+        if: steps.guard.outputs.skip == 'false' && steps.meta.outputs.new_tag == 'true'
+        # Deliberately AFTER the image is published and proven: a git tag is a
+        # claim that an artifact exists, so it is only earned once one does. It is
+        # pushed to github.com because the forge copy of this repo is a pull-mirror
+        # (440 of 442 luxfi repos are) and refuses receive-pack — `git push origin`
+        # from here would 403, which is why the old `|| echo "tag push skipped"`
+        # never tagged anything. GitHub is upstream; the tag mirrors back in seconds.
+        env:
+          GHCR_USER: ${{ secrets.GHCR_USER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -euo pipefail
+          v='v${{ steps.meta.outputs.version }}'
+          git config user.name  'hanzo-ci'
+          git config user.email 'ci@hanzo.ai'
+          git tag -a "$v" -m "$v" || { echo "::error::$v already exists"; exit 1; }
+          git push "https://${GHCR_USER}:${GHCR_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/$v"
+          echo "tagged $v"
