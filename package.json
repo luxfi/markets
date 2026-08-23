@@ -10,6 +10,7 @@
     "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
+    "@hanzo/font": "^1.8.1",
     "lightweight-charts": "^4.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
