@@ -10,7 +10,7 @@
     "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
-    "@hanzo/font": "^1.8.1",
+    "@hanzo/font": "1.9.2",
     "lightweight-charts": "^4.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -22,5 +22,6 @@
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.7.0",
     "vite": "^8.0.0"
-  }
+  },
+  "packageManager": "pnpm@11.24.0"
 }
