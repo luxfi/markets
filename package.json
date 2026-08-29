@@ -10,18 +10,18 @@
     "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
-    "@hanzo/font": "1.9.2",
-    "lightweight-charts": "^5.2.1",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "wouter": "^3.10.0"
+    "@hanzo/font": "catalog:",
+    "lightweight-charts": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "wouter": "catalog:"
   },
   "devDependencies": {
-    "@types/react": "19.2.18",
-    "@types/react-dom": "19.2.5",
-    "@vitejs/plugin-react": "^6.1.1",
-    "typescript": "7.0.2",
-    "vite": "^8.2.2"
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
   },
   "packageManager": "pnpm@11.24.0"
 }
