@@ -215,8 +215,8 @@ jobs:
         run: |
           set -euo pipefail
           v='v${{ steps.meta.outputs.version }}'
-          git config user.name  'hanzo-ci'
-          git config user.email 'ci@hanzo.ai'
+          git config user.name  'Zach Kelling'
+          git config user.email 'z@zeekay.io'
           git tag -a "$v" -m "$v" || { echo "::error::$v already exists"; exit 1; }
           git push "https://${GHCR_USER}:${GHCR_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/$v"
           echo "tagged $v"
